@@ -1,5 +1,6 @@
 import praw
 import psycopg2
+import os
 from datetime import datetime
 
 # REDDIT SETTINGS
@@ -10,14 +11,14 @@ USER_AGENT = "Snapshot Tool v0.0.1 Built: 11 Dec 2019"
 # time_filter – Can be one of: all, day, hour, month, week, year (default: all).
 TIME_FILTER = "day"
 
-# Anecdotal limit for comment length
-# https://www.reddit.com/r/help/comments/8thdeu/character_limit_for_comments/
-MAX_COMMENT_CHARS = 10000
-
 # POSTGRESQL SETTINGS
-DB_NAME = "snapshot"
-DB_USER = "redditsnapshot"
-DB_PWD = "password"
+try:
+    DB_NAME = os.environ['RS_DB_NAME']
+    DB_USER = os.environ['RS_DB_USER']
+    DB_PWD = os.environ['RS_DB_PWD']
+except KeyError:
+    print("Please set environment variables RS_DB_NAME, RS_DB_USER and RS_DB_PWD")
+    exit(1)
 
 reddit = praw.Reddit(
     client_id=CLIENT_ID,
