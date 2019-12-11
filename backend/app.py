@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import os
 import psycopg2
 
@@ -41,7 +41,53 @@ def list_snapshots():
             "subreddit" : subreddit
         }
         if timesort:
-            temp["timesort"] = timesort
+            temp["time"] = timesort
 
         answer.append(temp)
     return jsonify(answer)
+
+# Potentially dangerous - Check SQL sanitisation
+@app.route("/api/V1/getposts", methods=["GET"])
+def list_posts():
+    # Assume only one table can have the same timestamp
+    # probably not the most effective but prevents sql injections
+    table = request.args.get("utctimestamp")
+    start = request.args.get("start")
+    end = request.args.get("end")
+
+    try:
+        start = int(start)
+        try:
+            end = int(end)
+        except:
+            end = start + 50
+    except:
+        start = 0
+        end = 50
+
+    if table is None:
+        return jsonify()
+
+    cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';")
+    tables = cur.fetchall()
+    for table_name in tables:
+        if table in table_name[0]:
+            try:
+                cur.execute(f"SELECT title, author, text, url, score, createdutc FROM {table_name[0]} OFFSET %s LIMIT %s", (start, end - start))
+                table_data = cur.fetchall()
+                answer = []
+                for row in table_data:
+                    title, author, text, url, score, createdutc = row
+                    answer.append({
+                        "title" : title,
+                        "author" : author,
+                        "text" : text,
+                        "url" : url,
+                        "score" : score,
+                        "created_utc" : createdutc
+                    })
+                return jsonify(answer)
+            except Exception as e:
+                print(e)
+                return jsonify()
+    return jsonify()
