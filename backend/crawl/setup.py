@@ -9,6 +9,7 @@ setup(
         "praw",
         "psycopg2",
         "requests",
-        "pillow"
+        "pillow",
+        "youtube-dl"
     ],
 )
