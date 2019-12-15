@@ -1,14 +1,78 @@
+from datetime import datetime
+from image import save_image
 import praw
 import psycopg2
 import os
 import sys
 import multiprocessing
 import concurrent.futures
-from datetime import datetime
-from image import save_image
+import requests
+import youtube_dl
+import re
+
+class YTDL_Logger(object):
+    def debug(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        print(msg)
+        return [False, msg]
+
+
+def YTDL_hook(d):
+    if d["status"] == "finished":
+        print("Done downloading, now converting ...")
 
 def preserve_content(url, post_id, location=""):
-    return save_image(url, post_id, location=location)
+
+    video_re = [
+        "youtu\.be",
+        "\.youtube\.com",
+        "v\.redd\.it"
+    ]
+
+    for match_string in video_re:
+        if re.search(match_string, url):
+            ydl_opts = {
+                'format': 'bestvideo+bestaudio',
+                'logger': YTDL_Logger(),
+                'progress_hooks': [YTDL_hook],
+            }
+            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+                print(f"YTDL {url}: {ydl.download([url])}")
+                return [False, "test"]
+
+    # Load the url
+    try:
+        url_data = requests.get(url, stream=True)
+    except Exception as e:
+        return [False, f"Could not load URL: {e}"]
+
+    # check that the request is valid
+    if url_data.status_code != 200 or url_data == False:
+        return [False, "Invalid URL request"]
+
+    # Try to validate file is an image by checking magic bytes
+    # https://en.wikipedia.org/wiki/List_of_file_signatures
+
+    image_bytes = [
+        # jpeg
+        b'\xff\xd8\xff\xe0',
+        b'\xff\xd8\xff\xdb',
+        b'\xff\xd8\xff\xee',
+        b'\xff\xd8\xff\xe1',
+        # png
+        b'\x89\x50\x4E\x47'
+    ]
+
+    for header in image_bytes:
+        if url_data.content[:4] == header:
+            return save_image(url_data, post_id, location=location)
+    
+    return [False, f"Could not save file - bytes: {url_data.content[:4]}"]
 
 
 if __name__ == "__main__":
@@ -19,7 +83,7 @@ if __name__ == "__main__":
         DB_LOC = os.environ['RS_DB_LOC']
     except:
         DB_LOC = "localhost"
-    USER_AGENT = "Snapshot Tool v0.0.6 Built: 15 Dec 2019"
+    USER_AGENT = "Snapshot Tool v0.0.6 Built: 15 Dec 2019 /u/12ghast"
 
     if len(sys.argv) >= 2:
         SUBREDDIT = sys.argv[1]
@@ -110,6 +174,7 @@ if __name__ == "__main__":
     )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+        posts = []
         # Insert crawled data into database
         for submission in submission_data:
             # Save post
@@ -120,7 +185,13 @@ if __name__ == "__main__":
                 submission.url, submission.score, submission.created_utc]
             )
             # Save post media content
-            executor.submit(preserve_content, submission.url, submission.id)
+            future = executor.submit(preserve_content, submission.url, submission.id)
+            posts.append(
+                {
+                    "future" : future,
+                    "url" : submission.url
+                }
+            )
             # Save comments
             submission.comments.replace_more(limit=None)
             for comment in submission.comments.list():
@@ -136,5 +207,9 @@ if __name__ == "__main__":
                     comment.score, comment.created_utc, comment.link_id, comment.parent_id]
                 )
         executor.shutdown(wait=True)
+        for post in posts:
+            result = post["future"].result()
+            if not result[0]:
+                print(f"Error: {post['url']} with \"{result[1]}\"")
 
     conn.commit()
