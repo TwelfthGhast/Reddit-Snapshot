@@ -30,13 +30,13 @@ def list_snapshots():
     for table_name in tables:
         tbl_list = table_name[0].split("_")
         if len(tbl_list) == 4:
-            type, timestamp, subreddit, limit = tbl_list
+            sorttype, timestamp, subreddit, limit = tbl_list
             timesort = False
-        else:
-            type, timestamp, subreddit, limit, timesort = tbl_list
+        elif len(tbl_list) == 5:
+            sorttype, timestamp, subreddit, limit, timesort = tbl_list
 
         temp = {
-            "sort" : type,
+            "sort" : sorttype,
             "utctimestamp" : timestamp,
             "subreddit" : subreddit
         }
@@ -73,18 +73,18 @@ def list_posts():
     for table_name in tables:
         if table in table_name[0]:
             try:
-                cur.execute(f"SELECT title, author, text, url, score, createdutc FROM {table_name[0]} OFFSET %s LIMIT %s", (start, end - start))
+                cur.execute(f"SELECT title, author, text, url, score, created_utc FROM {table_name[0]} OFFSET %s LIMIT %s", (start, end - start))
                 table_data = cur.fetchall()
                 answer = []
                 for row in table_data:
-                    title, author, text, url, score, createdutc = row
+                    title, author, text, url, score, created_utc = row
                     answer.append({
                         "title" : title,
                         "author" : author,
                         "text" : text,
                         "url" : url,
                         "score" : score,
-                        "created_utc" : createdutc
+                        "created_utc" : created_utc
                     })
                 return jsonify(answer)
             except Exception as e:
