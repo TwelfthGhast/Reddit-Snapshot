@@ -84,7 +84,7 @@ except Exception as e:
 
 DATETIME_CONST = int(datetime.utcnow().timestamp())
 TABLE_NAME = f"{POST_FILTER}_{DATETIME_CONST}_{SUBREDDIT}_{POST_LIMIT}"
-COMMENT_TABLE_NAME = f"{DATETIME_CONST}_comments"
+COMMENT_TABLE_NAME = f"comments_{DATETIME_CONST}"
 
 if POST_FILTER in ["top", "controversial"]:
     TABLE_NAME += f"_{TIME_FILTER}"
@@ -114,7 +114,7 @@ for submission in submission_data:
         cur.execute(
             f"INSERT INTO {COMMENT_TABLE_NAME}(id, author, text, edited, score, created_utc, submission_id, parent_id) VALUES (\
             %s,%s,%s,%s,%s,%s);",
-            [comment.id, comment.author.name, comment.body, comment.edited, \
+            [comment.id, comment.author.name, comment.body, comment.edited,
             comment.score, comment.created_utc, comment.link_id, comment.parent_id]
         )
 
