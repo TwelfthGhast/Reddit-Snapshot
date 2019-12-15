@@ -84,7 +84,7 @@ except Exception as e:
 
 DATETIME_CONST = int(datetime.utcnow().timestamp())
 TABLE_NAME = f"{POST_FILTER}_{DATETIME_CONST}_{SUBREDDIT}_{POST_LIMIT}"
-COMMENT_TABLE_NAME = f"{DATETIME_CONST}_comments"
+COMMENT_TABLE_NAME = f"comments_{DATETIME_CONST}"
 
 if POST_FILTER in ["top", "controversial"]:
     TABLE_NAME += f"_{TIME_FILTER}"
