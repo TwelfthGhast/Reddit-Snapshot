@@ -3,6 +3,7 @@ import psycopg2
 import os
 import sys
 from datetime import datetime
+from image import save_image
 
 # REDDIT SETTINGS
 CLIENT_ID = os.environ['RS_CLIENT_ID']
@@ -103,14 +104,18 @@ cur.execute(
 
 # Insert crawled data into database
 for submission in submission_data:
+    # Save post
     cur.execute(
         f"INSERT INTO {TABLE_NAME}(id, title, author, text, url, score, created_utc) VALUES (\
         %s,%s,%s,%s,%s,%s,%s);",
         [submission.id, submission.title, submission.author.name, submission.selftext,
         submission.url, submission.score, submission.created_utc]
     )
+    save_image(submission.url, submission.id)
+    # Save comments
     submission.comments.replace_more(limit=None)
     for comment in submission.comments.list():
+        # Some Redditor classes evaluate as None due to deleted/banned accounts?
         try:
             author = comment.author.name
         except:
