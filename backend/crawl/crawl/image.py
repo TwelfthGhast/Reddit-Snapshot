@@ -3,7 +3,7 @@ from PIL import Image
 from io import BytesIO
 
 
-def save_image(url, id, location=""):
+def save_image(url, post_id, location=""):
     # Load the img url
     try:
         img = requests.get(url, stream=True)
@@ -44,6 +44,6 @@ def save_image(url, id, location=""):
         raise ValueError("Issue with opening image.")
 
     # save the img
-    byteImg.save(f"{location}{id}.png")
+    byteImg.save(f"{location}{post_id}.png")
 
     return True
