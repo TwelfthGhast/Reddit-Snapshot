@@ -5,8 +5,12 @@ import sys
 from datetime import datetime
 
 # REDDIT SETTINGS
-CLIENT_ID = input("Enter Client ID:").strip()
-CLIENT_SECRET = input("Enter Client Secret:").strip()
+CLIENT_ID = os.environ['RS_CLIENT_ID']
+CLIENT_SECRET = os.environ['RS_CLIENT_SECRET']
+try:
+    DB_LOC = os.environ['RS_DB_LOC']
+except:
+    DB_LOC = "localhost"
 USER_AGENT = "Snapshot Tool v0.0.4 Built: 11 Dec 2019"
 
 if len(sys.argv) >= 2:
@@ -71,7 +75,7 @@ else:
 
 # Initialise our postgreSQL connection and variables
 try:
-    conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PWD, host='localhost')
+    conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PWD, host=DB_LOC)
     cur = conn.cursor()
 except Exception as e:
     print("Could not connect to local PostgreSQL database.")
