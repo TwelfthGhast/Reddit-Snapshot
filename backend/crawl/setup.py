@@ -7,6 +7,8 @@ setup(
     include_package_data = True,
     install_requires = [
         "praw",
-        "psycopg2"
+        "psycopg2",
+        "requests",
+        "pillow"
     ],
 )
