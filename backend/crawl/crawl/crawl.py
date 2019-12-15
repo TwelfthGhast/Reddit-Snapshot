@@ -98,7 +98,7 @@ cur.execute(
 # Create a table to store each comment snapshot
 cur.execute(
     f"CREATE TABLE {COMMENT_TABLE_NAME}(id varchar(15), created_utc varchar (15), author varchar(20), \
-    edited bool, text varchar(50000), score int, submission_id varchar (10), parent_id varchar (15))"
+    edited varchar(15), text varchar(50000), score int, submission_id varchar (10), parent_id varchar (15))"
 )
 
 # Insert crawled data into database
@@ -111,10 +111,14 @@ for submission in submission_data:
     )
     submission.comments.replace_more(limit=None)
     for comment in submission.comments.list():
+        try:
+            author = comment.author.name
+        except:
+            author = "[deleted]"
         cur.execute(
             f"INSERT INTO {COMMENT_TABLE_NAME}(id, author, text, edited, score, created_utc, submission_id, parent_id) VALUES (\
-            %s,%s,%s,%s,%s,%s);",
-            [comment.id, comment.author.name, comment.body, comment.edited,
+            %s,%s,%s,%s,%s,%s,%s,%s);",
+            [comment.id, author, comment.body, comment.edited,
             comment.score, comment.created_utc, comment.link_id, comment.parent_id]
         )
 
