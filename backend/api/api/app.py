@@ -1,0 +1,103 @@
+from flask import Flask, jsonify, request
+import os
+import psycopg2
+
+app = Flask(__name__)
+
+try:
+    DB_HOST = os.environ['RS_DB_LOC']
+except:
+    DB_HOST = 'localhost'
+    print("RS_DB_LOC was not set as an environment variable. Defaulting to localhost.")
+
+# POSTGRESQL SETTINGS
+try:
+    DB_NAME = os.environ['RS_DB_NAME']
+    DB_USER = os.environ['RS_DB_USER']
+    DB_PWD = os.environ['RS_DB_PWD']
+except KeyError:
+    print("Please set environment variables RS_DB_NAME, RS_DB_USER and RS_DB_PWD")
+    exit(1)
+
+try:
+    conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PWD, host=DB_HOST)
+    cur = conn.cursor()
+except Exception as e:
+    print("Could not connect to local PostgreSQL database.")
+    print(e)
+    exit(1)
+
+
+@app.route("/api/V1/snapshot", methods=["GET"])
+def list_snapshots():
+    answer = []
+    cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';")
+    tables = cur.fetchall()
+    for table_name in tables:
+        tbl_list = table_name[0].split("_")
+        if len(tbl_list) == 4:
+            sorttype, timestamp, subreddit, limit = tbl_list
+            timesort = False
+        elif len(tbl_list) == 5:
+            sorttype, timestamp, subreddit, limit, timesort = tbl_list
+        else:
+            continue
+
+        temp = {
+            "sort" : sorttype,
+            "utctimestamp" : timestamp,
+            "subreddit" : subreddit
+        }
+        if timesort:
+            temp["time"] = timesort
+
+        answer.append(temp)
+    return jsonify(answer)
+
+# Potentially dangerous - Check SQL sanitisation
+@app.route("/api/V1/getposts", methods=["GET"])
+def list_posts():
+    # Assume only one table can have the same timestamp
+    # probably not the most effective but prevents sql injections
+    table = request.args.get("utctimestamp")
+    start = request.args.get("start")
+    end = request.args.get("end")
+
+    # Will probably need to implement this if we ever need pagification
+    # But PRAW limits to 1000 posts which isn't that bad....
+    try:
+        start = int(start)
+        try:
+            end = int(end)
+        except:
+            end = start + 1000
+    except:
+        start = 0
+        end = 1000
+
+    if table is None:
+        return jsonify()
+
+    cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';")
+    tables = cur.fetchall()
+    for table_name in tables:
+        if table in table_name[0]:
+            try:
+                cur.execute(f"SELECT title, author, text, url, score, created_utc FROM {table_name[0]} OFFSET %s LIMIT %s", (start, end - start))
+                table_data = cur.fetchall()
+                answer = []
+                for row in table_data:
+                    title, author, text, url, score, created_utc = row
+                    answer.append({
+                        "title" : title,
+                        "author" : author,
+                        "text" : text,
+                        "url" : url,
+                        "score" : score,
+                        "created_utc" : created_utc
+                    })
+                return jsonify(answer)
+            except Exception as e:
+                print(e)
+                return jsonify()
+    return jsonify()
