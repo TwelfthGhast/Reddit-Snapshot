@@ -173,7 +173,7 @@ if __name__ == "__main__":
         edited varchar(15), text varchar(50000), score int, submission_id varchar (10), parent_id varchar (15))"
     )
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 10) as executor:
         posts = []
         # Insert crawled data into database
         for submission in submission_data:
@@ -206,6 +206,7 @@ if __name__ == "__main__":
                     [comment.id, author, comment.body, comment.edited,
                     comment.score, comment.created_utc, comment.link_id, comment.parent_id]
                 )
+        print("Waiting for threads to finish downloading media...")
         executor.shutdown(wait=True)
         for post in posts:
             result = post["future"].result()
