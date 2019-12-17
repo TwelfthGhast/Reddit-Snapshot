@@ -6,9 +6,11 @@ import os
 import sys
 import multiprocessing
 import concurrent.futures
+import threading
 import requests
 import youtube_dl
 import re
+import time
 
 class YTDL_Logger(object):
     def debug(self, msg):
@@ -24,7 +26,7 @@ class YTDL_Logger(object):
 
 def YTDL_hook(d):
     if d["status"] == "finished":
-        print("Done downloading, now converting ...")
+        pass
 
 def preserve_content(url, post_id, location=""):
 
@@ -36,14 +38,19 @@ def preserve_content(url, post_id, location=""):
 
     for match_string in video_re:
         if re.search(match_string, url):
-            ydl_opts = {
-                'format': 'bestvideo+bestaudio',
-                'logger': YTDL_Logger(),
-                'progress_hooks': [YTDL_hook],
-            }
-            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-                print(f"YTDL {url}: {ydl.download([url])}")
-                return [False, "test"]
+            try:
+                ydl_opts = {
+                    'format': 'bestvideo+bestaudio',
+                    'logger': YTDL_Logger(),
+                    'progress_hooks': [YTDL_hook],
+                }
+                with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+                    if ydl.download([url]) != 0:
+                        # Unusual output
+                        return [False, f"{url}: Unusual exit code for YTDL"]
+                    return [True, "Success"]
+            except Exception as e:
+                return [False, f"YDL error for {url}: {e}"]
 
     # Load the url
     try:
@@ -75,14 +82,47 @@ def preserve_content(url, post_id, location=""):
     return [False, f"Could not save file - bytes: {url_data.content[:4]}"]
 
 
+def save_comments(submission):
+    cur = con_db()
+    submission.comments.replace_more(limit=None)
+    for comment in submission.comments.list():
+        # Some Redditor classes evaluate as None due to deleted/banned accounts?
+        try:
+            author = comment.author.name
+        except:
+            author = "[deleted]"
+        cur.execute(
+            f"INSERT INTO {COMMENT_TABLE_NAME}(id, author, text, edited, score, created_utc, submission_id, parent_id) VALUES (\
+            %s,%s,%s,%s,%s,%s,%s,%s);",
+            [comment.id, author, comment.body, comment.edited,
+            comment.score, comment.created_utc, comment.link_id, comment.parent_id]
+        )
+    cur.close()
+
+
+def con_db():
+    # Initialise our postgreSQL connection and variables
+    try:
+        conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PWD, host=DB_LOC)
+        conn.set_session(autocommit=True)
+        cur = conn.cursor()
+        return cur
+    except Exception as e:
+        print("Could not connect to PostgreSQL database.")
+        print(e)
+        exit(1)
+
+
 if __name__ == "__main__":
     # REDDIT SETTINGS
     CLIENT_ID = os.environ['RS_CLIENT_ID']
     CLIENT_SECRET = os.environ['RS_CLIENT_SECRET']
+
     try:
         DB_LOC = os.environ['RS_DB_LOC']
     except:
         DB_LOC = "localhost"
+    
     USER_AGENT = "Snapshot Tool v0.0.6 Built: 15 Dec 2019 /u/12ghast"
 
     if len(sys.argv) >= 2:
@@ -145,14 +185,7 @@ if __name__ == "__main__":
         POST_FILTER = "top"
         submission_data = subreddit.top(time_filter=TIME_FILTER, limit=POST_LIMIT)
 
-    # Initialise our postgreSQL connection and variables
-    try:
-        conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PWD, host=DB_LOC)
-        cur = conn.cursor()
-    except Exception as e:
-        print("Could not connect to local PostgreSQL database.")
-        print(e)
-        exit(1)
+    cur = con_db()
 
     DATETIME_CONST = int(datetime.utcnow().timestamp())
     TABLE_NAME = f"{POST_FILTER}_{DATETIME_CONST}_{SUBREDDIT}_{POST_LIMIT}"
@@ -173,9 +206,12 @@ if __name__ == "__main__":
         edited varchar(15), text varchar(50000), score int, submission_id varchar (10), parent_id varchar (15))"
     )
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 10) as executor:
-        posts = []
-        # Insert crawled data into database
+    posts = []
+    # max workers defaults to min(32, os.cpu_count() + 4) according to documentation
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = []
+        count = 0
+        print(f"Estimated: 0/{POST_LIMIT}\t0%", end="")
         for submission in submission_data:
             # Save post
             cur.execute(
@@ -192,25 +228,20 @@ if __name__ == "__main__":
                     "url" : submission.url
                 }
             )
+            futures.append(future)
             # Save comments
-            submission.comments.replace_more(limit=None)
-            for comment in submission.comments.list():
-                # Some Redditor classes evaluate as None due to deleted/banned accounts?
-                try:
-                    author = comment.author.name
-                except:
-                    author = "[deleted]"
-                cur.execute(
-                    f"INSERT INTO {COMMENT_TABLE_NAME}(id, author, text, edited, score, created_utc, submission_id, parent_id) VALUES (\
-                    %s,%s,%s,%s,%s,%s,%s,%s);",
-                    [comment.id, author, comment.body, comment.edited,
-                    comment.score, comment.created_utc, comment.link_id, comment.parent_id]
-                )
+            # This contributes to postgreSQL cursor count, so don't set max workers too high...
+            futures.append(executor.submit(save_comments, submission))
+            # QOL Progress Tracker
+            count += 1
+            sys.stdout.write(f"\rEstimated: {count}/{POST_LIMIT}\t{int(count * 100/POST_LIMIT)}%")
+            sys.stdout.flush()
+        print("\n")
+        print(f"{count} posts queued.")
         print("Waiting for threads to finish downloading media...")
-        executor.shutdown(wait=True)
-        for post in posts:
-            result = post["future"].result()
-            if not result[0]:
-                print(f"Error: {post['url']} with \"{result[1]}\"")
-
-    conn.commit()
+        print(f"{threading.active_count()} threads still working...")
+    print(f"Crawling complete!")
+    for post in posts:
+        result = post["future"].result()
+        if not result[0]:
+            print(f"Error: {post['url']} with \"{result[1]}\"")
